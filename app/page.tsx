@@ -3,25 +3,15 @@ export const dynamic = "force-dynamic";
 
 export default function HomePage() {
   return (
-    <main
-      style={{
-        maxWidth: 820,
-        margin: "40px auto",
-        padding: 16,
-        fontFamily: "system-ui",
-      }}
-    >
-      <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>
-        Skina Review
-      </h1>
+    <main style={{ maxWidth: 820, margin: "40px auto", padding: 16, fontFamily: "system-ui" }}>
+      <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>Skina Review</h1>
 
       <div style={{ lineHeight: 1.6 }}>
         <p style={{ margin: 0 }}>
           感谢您光临 Skina！如果您满意我们的服务，欢迎留下您的 Google 评价～
         </p>
         <p style={{ margin: "6px 0 0 0", color: "#555" }}>
-          Thank you for visiting Skina! If you enjoyed your experience, please
-          leave us a Google review.
+          Thank you for visiting Skina! If you enjoyed your experience, please leave us a Google review.
         </p>
       </div>
 
