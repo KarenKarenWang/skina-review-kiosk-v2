@@ -1,6 +1,3 @@
-// app/r/page.tsx
-export const dynamic = "force-dynamic";
-
 import { getRedis, KEY_UNUSED, KEY_USED } from "@/lib/redis";
 import { getGoogleReviewUrl } from "@/lib/auth";
 
@@ -8,105 +5,85 @@ function pickOne<T>(arr: T[]) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// 含中文字符就认为不是英文
 function hasChinese(s: string) {
   return /[\u4e00-\u9fff]/.test(s);
 }
 
-export default async function KioskPage({
+export default async function RPage({
   searchParams,
 }: {
-  searchParams?: { lang?: string };
+  searchParams?: Promise<{ lang?: string }>;
 }) {
-  const lang = (searchParams?.lang || "zh").toLowerCase(); // zh | en
-  const redis = getRedis();
+  const sp = (await searchParams) ?? {};
+  const lang = sp.lang ?? "en";
+
   const reviewUrl = getGoogleReviewUrl();
 
-  const all = ((await redis.smembers(KEY_UNUSED)) as string[]) || [];
+  // 只做英文模式；如果有人手动进 /r?lang=zh，直接给他跳Google即可（避免报错/逻辑混乱）
+  if (lang !== "en") {
+    return (
+      <main style={{ maxWidth: 820, margin: "40px auto", padding: 16, fontFamily: "system-ui" }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700 }}>Skina Review</h1>
+        <p style={{ marginTop: 10 }}>请返回首页选择语言后继续。</p>
+        {reviewUrl ? (
+          <a href={reviewUrl} style={{ display: "inline-block", marginTop: 12, padding: "10px 14px", borderRadius: 10, border: "1px solid #ddd" }}>
+            Open Google Review
+          </a>
+        ) : (
+          <p style={{ marginTop: 12, color: "crimson" }}>GOOGLE_REVIEW_URL 没设置</p>
+        )}
+      </main>
+    );
+  }
 
-  // 1) 先按语言过滤
-  let candidates =
-    lang === "en" ? all.filter((x) => !hasChinese(x)) : all.filter((x) => hasChinese(x));
+  const redis = getRedis();
 
-  // 2) 如果该语言池为空：兜底（避免空白）
-  const fallbackZh = "服务很好，环境干净，体验很专业！";
-  const fallbackEn = "Great service, clean environment, and very professional staff!";
+  const all = (await redis.smembers(KEY_UNUSED)) as string[] | null;
+  const englishPool = (all ?? []).map((x) => x.trim()).filter(Boolean).filter((x) => !hasChinese(x));
 
-  const line = candidates.length ? pickOne(candidates) : (lang === "en" ? fallbackEn : fallbackZh);
+  const line =
+    englishPool.length > 0
+      ? pickOne(englishPool)
+      : "Great service and professional staff. Highly recommended!";
 
-  // 3) 只有当这个 line 是从 Redis 抽出来的，才标记为 used
-  if (candidates.length) {
+  // 标记已用（可选：如果你不想消耗池子，把这段注释掉）
+  if (englishPool.length > 0) {
     await redis.srem(KEY_UNUSED, line);
     await redis.sadd(KEY_USED, line);
   }
 
   return (
     <main style={{ maxWidth: 820, margin: "40px auto", padding: 16, fontFamily: "system-ui" }}>
-      <h1 style={{ fontSize: 26, fontWeight: 800 }}>Skina Review Helper</h1>
+      <h1 style={{ fontSize: 26, fontWeight: 800 }}>Skina Review (English)</h1>
+      <p style={{ marginTop: 10 }}>Tap below to copy an English review template and go to Google Review.</p>
 
-      <p style={{ marginTop: 10 }}>
-        {lang === "en"
-          ? "Tap to copy the review text, then open Google Review."
-          : "点击复制评价文案，然后打开 Google Review 粘贴提交。"}
-      </p>
-
-      <pre
-        style={{
-          marginTop: 12,
-          padding: 14,
-          background: "#f6f6f6",
-          borderRadius: 12,
-          whiteSpace: "pre-wrap",
-          fontSize: 16,
-        }}
-      >
+      <pre style={{ marginTop: 12, padding: 12, background: "#f6f6f6", borderRadius: 12, whiteSpace: "pre-wrap" }}>
         {line}
       </pre>
 
-      <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
-        <button
-          onClick={async () => {
-            await navigator.clipboard.writeText(line);
-            alert(lang === "en" ? "Copied!" : "已复制！");
-          }}
-          style={{
-            padding: "10px 14px",
-            borderRadius: 10,
-            border: "1px solid #ddd",
-            cursor: "pointer",
-            fontWeight: 700,
-          }}
-        >
-          {lang === "en" ? "Copy" : "复制"}
-        </button>
+      {reviewUrl ? (
+        <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            onClick={async () => {
+              await navigator.clipboard.writeText(line);
+              window.location.href = reviewUrl;
+            }}
+            style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #ddd", cursor: "pointer" }}
+          >
+            Copy & Go to Google Review
+          </button>
 
-        {reviewUrl ? (
           <a
             href={reviewUrl}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              display: "inline-block",
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              textDecoration: "none",
-              fontWeight: 700,
-            }}
+            style={{ display: "inline-block", padding: "10px 14px", borderRadius: 10, border: "1px solid #ddd" }}
           >
-            {lang === "en" ? "Open Google Review" : "打开 Google 评价"}
+            Open Google Review Only
           </a>
-        ) : (
-          <span style={{ color: "crimson" }}>
-            {lang === "en" ? "GOOGLE_REVIEW_URL not set" : "GOOGLE_REVIEW_URL 未设置"}
-          </span>
-        )}
-      </div>
-
-      <div style={{ marginTop: 16 }}>
-        <a href="/" style={{ color: "#555" }}>
-          ← {lang === "en" ? "Back" : "返回"}
-        </a>
-      </div>
+        </div>
+      ) : (
+        <p style={{ marginTop: 12, color: "crimson" }}>GOOGLE_REVIEW_URL 没设置</p>
+      )}
     </main>
   );
 }
