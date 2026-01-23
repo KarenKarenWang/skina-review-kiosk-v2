@@ -13,18 +13,21 @@ type Actions = {
 
 export default function AdminClient({
   tokenFromUrl,
+  langFromUrl,
   unusedCount,
   usedCount,
   redisError,
   actions,
 }: {
   tokenFromUrl: string;
+  langFromUrl: "en" | "zh";
   unusedCount: number;
   usedCount: number;
   redisError: string | null;
   actions: Actions;
 }) {
   const [token, setToken] = React.useState(tokenFromUrl || "");
+  const [lang, setLang] = React.useState<"en" | "zh">(langFromUrl);
   const [status, setStatus] = React.useState<ActionResult | null>(null);
 
   async function runAction(
@@ -32,133 +35,147 @@ export default function AdminClient({
     fd: FormData
   ) {
     fd.set("token", token);
+    fd.set("lang", lang);
     setStatus(null);
     const res = await action(fd);
     setStatus(res);
   }
 
-  const bannerStyle: React.CSSProperties = {
-    marginTop: 14,
-    padding: "10px 12px",
+  const box: React.CSSProperties = {
     border: "1px solid #ddd",
+    borderRadius: 12,
+    padding: 14,
+    background: "#fff",
+  };
+
+  const input: React.CSSProperties = {
+    padding: 10,
+    border: "1px solid #ccc",
     borderRadius: 10,
+  };
+
+  const btn: React.CSSProperties = {
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "1px solid #ddd",
     background: "#fafafa",
-    fontSize: 14,
-    lineHeight: 1.4,
-    whiteSpace: "pre-wrap",
+    cursor: "pointer",
   };
 
   return (
     <main style={{ maxWidth: 860, margin: "40px auto", padding: 16 }}>
       <h1 style={{ fontSize: 28, fontWeight: 700 }}>Skina Review Kiosk Admin</h1>
 
-      <p style={{ marginTop: 12 }}>
-        Unused: <b>{unusedCount}</b> | Used: <b>{usedCount}</b>
-      </p>
+      {/* Language toggle */}
+      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ opacity: 0.8 }}>Language:</div>
+        <button
+          type="button"
+          style={{ ...btn, background: lang === "zh" ? "#eaeaea" : "#fafafa" }}
+          onClick={() => setLang("zh")}
+        >
+          中文 (ZH)
+        </button>
+        <button
+          type="button"
+          style={{ ...btn, background: lang === "en" ? "#eaeaea" : "#fafafa" }}
+          onClick={() => setLang("en")}
+        >
+          English (EN)
+        </button>
+        <div style={{ marginLeft: 8, opacity: 0.8 }}>
+          当前库: {lang === "zh" ? "中文池" : "英文池"}
+        </div>
+      </div>
 
-      {/* Redis 状态提示（不会炸页面） */}
-      {redisError ? (
-        <div style={bannerStyle}>❌ {redisError}</div>
-      ) : (
-        <div style={bannerStyle}>✅ Redis connected</div>
-      )}
+      {/* Counts + redis status */}
+      <div style={{ marginTop: 14, ...box }}>
+        <div>
+          Unused pool: <b>{unusedCount}</b>
+        </div>
+        <div>
+          Used pool: <b>{usedCount}</b>
+        </div>
+        <div style={{ marginTop: 8, opacity: 0.85 }}>
+          {redisError ? `❌ ${redisError}` : "✅ Redis connected"}
+        </div>
+      </div>
 
-      {/* Token 输入 */}
+      {/* Token */}
       <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
         <input
           value={token}
           onChange={(e) => setToken(e.target.value)}
           placeholder="ADMIN_TOKEN"
-          style={{
-            width: 360,
-            padding: 10,
-            border: "1px solid #ccc",
-            borderRadius: 10,
-          }}
+          style={{ ...input, width: 360 }}
         />
-        <button
-          type="button"
-          onClick={() => setToken("")}
-          style={{ padding: "10px 14px", borderRadius: 10 }}
-        >
+        <button type="button" style={btn} onClick={() => setToken("")}>
           Clear Token
         </button>
       </div>
 
-      {/* 操作结果提示 */}
+      {/* status */}
       {status && (
-        <div style={bannerStyle}>
+        <div style={{ marginTop: 12, ...box, background: "#fafafa" }}>
           {status.ok ? `✅ ${status.message || "Success"}` : `❌ ${status.error}`}
         </div>
       )}
 
       {/* Add One */}
-      <section style={{ marginTop: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Add One</h2>
-
+      <section style={{ marginTop: 24, ...box }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Add One</h2>
         <form
           action={async (fd) => runAction(actions.addOne, fd)}
-          style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}
+          style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}
         >
           <input
             name="text"
-            placeholder="one review text..."
-            style={{
-              flex: 1,
-              minWidth: 320,
-              padding: 10,
-              border: "1px solid #ccc",
-              borderRadius: 10,
-            }}
+            placeholder={lang === "zh" ? "输入一条中文评价模板" : "Enter one English review template"}
+            style={{ ...input, flex: 1, minWidth: 320 }}
           />
-          <button type="submit" style={{ padding: "10px 14px", borderRadius: 10 }}>
+          <button type="submit" style={btn}>
             Add
           </button>
         </form>
+        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
+          Tip: {lang === "en" ? "Do not mix Chinese characters in English pool." : "中文池建议不要混入英文（避免误导）"}
+        </div>
       </section>
 
       {/* Bulk Add */}
-      <section style={{ marginTop: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Bulk Add</h2>
-
-        <form action={async (fd) => runAction(actions.bulkAdd, fd)} style={{ marginTop: 8 }}>
+      <section style={{ marginTop: 16, ...box }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Bulk Add</h2>
+        <form action={async (fd) => runAction(actions.bulkAdd, fd)} style={{ marginTop: 10 }}>
           <textarea
             name="bulk"
-            placeholder="one per line..."
             rows={8}
-            style={{
-              width: "100%",
-              padding: 10,
-              border: "1px solid #ccc",
-              borderRadius: 10,
-            }}
+            placeholder={lang === "zh" ? "每行一条中文文案（回车分行）" : "One per line (press Enter)"}
+            style={{ ...input, width: "100%", borderRadius: 12 }}
           />
-          <button
-            type="submit"
-            style={{ marginTop: 8, padding: "10px 14px", borderRadius: 10 }}
-          >
+          <button type="submit" style={{ ...btn, marginTop: 10 }}>
             Bulk Add
           </button>
         </form>
       </section>
 
       {/* Maintenance */}
-      <section style={{ marginTop: 24, display: "flex", gap: 10, flexWrap: "wrap" }}>
+      <section style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
         <form action={async (fd) => runAction(actions.clearUsed, fd)}>
-          <button type="submit" style={{ padding: "10px 14px", borderRadius: 10 }}>
+          <button type="submit" style={btn}>
             Clear Used
           </button>
         </form>
 
         <form action={async (fd) => runAction(actions.resetAll, fd)}>
-          <button type="submit" style={{ padding: "10px 14px", borderRadius: 10 }}>
+          <button type="submit" style={btn}>
             Reset All
           </button>
         </form>
       </section>
 
-      <p style={{ marginTop: 24, opacity: 0.8 }}>
-        Tip: You can still open <code>/admin?token=YOUR_ADMIN_TOKEN</code> to auto-fill.
+      <p style={{ marginTop: 18, opacity: 0.8 }}>
+        Tip: open <code>/admin?lang=zh&amp;token=YOUR_ADMIN_TOKEN</code> or{" "}
+        <code>/admin?lang=en&amp;token=YOUR_ADMIN_TOKEN</code>
       </p>
     </main>
   );

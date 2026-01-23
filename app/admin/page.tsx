@@ -1,18 +1,31 @@
 // app/admin/page.tsx
 export const dynamic = "force-dynamic";
 
-import { getRedisSafe, KEY_UNUSED, KEY_USED } from "@/lib/redis";
+import {
+  getRedisSafe,
+  KEY_UNUSED_EN,
+  KEY_USED_EN,
+  KEY_UNUSED_ZH,
+  KEY_USED_ZH,
+} from "@/lib/redis";
 import { addOne, bulkAdd, clearUsed, resetAll } from "./actions";
 import AdminClient from "./ui";
+
+function getKeys(lang: "en" | "zh") {
+  return lang === "en"
+    ? { UNUSED: KEY_UNUSED_EN, USED: KEY_USED_EN }
+    : { UNUSED: KEY_UNUSED_ZH, USED: KEY_USED_ZH };
+}
 
 export default async function AdminPage({
   searchParams,
 }: {
-  searchParams?: { token?: string };
+  searchParams?: { token?: string; lang?: string };
 }) {
   const tokenFromUrl = searchParams?.token ?? "";
+  const lang: "en" | "zh" =
+    (searchParams?.lang || "").toLowerCase() === "en" ? "en" : "zh";
 
-  // ✅ 不让 Redis env/连接问题把页面炸掉
   const r = getRedisSafe();
 
   let unusedCount = 0;
@@ -22,12 +35,13 @@ export default async function AdminPage({
   if (r.ok) {
     try {
       const redis = r.redis;
+      const { UNUSED, USED } = getKeys(lang);
       [unusedCount, usedCount] = await Promise.all([
-        redis.scard(KEY_UNUSED),
-        redis.scard(KEY_USED),
+        redis.scard(UNUSED),
+        redis.scard(USED),
       ]);
     } catch (e) {
-      console.error("AdminPage scard error:", e);
+      console.error("AdminPage count error:", e);
       redisError = "Redis error while reading counts.";
     }
   } else {
@@ -37,6 +51,7 @@ export default async function AdminPage({
   return (
     <AdminClient
       tokenFromUrl={tokenFromUrl}
+      langFromUrl={lang}
       unusedCount={unusedCount}
       usedCount={usedCount}
       redisError={redisError}

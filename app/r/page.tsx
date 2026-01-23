@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import ReviewClient from "./ReviewClient";
 import {
-  getRedis,
+  getRedisSafe,
   KEY_UNUSED_EN,
   KEY_USED_EN,
   KEY_UNUSED_ZH,
@@ -37,24 +37,36 @@ export default async function ReviewPage({
     reviewUrl = null;
   }
 
-  // Redis 抽文案（按语言分 key）
-  const redis = getRedis();
-  const keyUnused = lang === "zh" ? KEY_UNUSED_ZH : KEY_UNUSED_EN;
-  const keyUsed = lang === "zh" ? KEY_USED_ZH : KEY_USED_EN;
-
-  const all = (await redis.smembers(keyUnused)) as string[] | null;
   const fallback =
     lang === "zh"
       ? "服务很专业，环境干净舒适，体验很好，推荐！"
       : "Great experience! Professional service and friendly staff. Highly recommend.";
 
-  const line = all && all.length ? pickOne(all) : fallback;
+  const keyUnused = lang === "zh" ? KEY_UNUSED_ZH : KEY_UNUSED_EN;
+  const keyUsed = lang === "zh" ? KEY_USED_ZH : KEY_USED_EN;
 
-  // 标记已使用（避免重复）
-  if (all && all.length) {
-    await redis.srem(keyUnused, line);
-    await redis.sadd(keyUsed, line);
+  // ✅ 安全获取 redis：不可用就直接 fallback
+  const r = getRedisSafe();
+  if (!r.ok) {
+    return <ReviewClient line={fallback} reviewUrl={reviewUrl} lang={lang} />;
   }
 
-  return <ReviewClient line={line} reviewUrl={reviewUrl} lang={lang} />;
+  const redis = r.redis;
+
+  try {
+    // 仍然沿用你现在的 smembers 抽取逻辑（先保证稳定）
+    const all = (await redis.smembers(keyUnused)) as string[] | null;
+    const line = all && all.length ? pickOne(all) : fallback;
+
+    // 标记已使用（避免重复）
+    if (all && all.length) {
+      await redis.srem(keyUnused, line);
+      await redis.sadd(keyUsed, line);
+    }
+
+    return <ReviewClient line={line} reviewUrl={reviewUrl} lang={lang} />;
+  } catch (e) {
+    console.error("ReviewPage redis error:", e);
+    return <ReviewClient line={fallback} reviewUrl={reviewUrl} lang={lang} />;
+  }
 }
