@@ -1,91 +1,140 @@
+// app/admin/actions.ts
 "use server";
 
-import {
-  getRedis,
-  KEY_UNUSED_ZH,
-  KEY_USED_ZH,
-  KEY_UNUSED_EN,
-  KEY_USED_EN,
-} from "@/lib/redis";
-import { isAdminTokenValid } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { getRedisSafe, KEY_UNUSED, KEY_USED } from "@/lib/redis";
+import { isAdminTokenValid } from "@/lib/auth";
 
-function requireAdmin(token?: string | null) {
+/** 统一的 action 返回类型 */
+export type ActionResult =
+  | { ok: true; message?: string; added?: number }
+  | { ok: false; error: string };
+
+/** 鉴权：永远不 throw */
+function checkAdmin(token?: string | null): ActionResult {
   if (!isAdminTokenValid(token)) {
-    throw new Error("Unauthorized: invalid ADMIN_TOKEN");
+    return { ok: false, error: "Unauthorized: invalid ADMIN_TOKEN" };
+  }
+  return { ok: true };
+}
+
+function normalizeLine(s: string) {
+  return s.trim().replace(/\s+/g, " ");
+}
+
+/** 统一获取 redis（安全版，不 throw） */
+function getRedisOrError(): { redis: any } | { error: string } {
+  const r = getRedisSafe();
+  if (!r.ok) return { error: r.error };
+  return { redis: r.redis };
+}
+
+/* =========================
+   Add One
+   ========================= */
+export async function addOne(formData: FormData): Promise<ActionResult> {
+  try {
+    const token = String(formData.get("token") || "");
+    const auth = checkAdmin(token);
+    if (!auth.ok) return auth;
+
+    const text = normalizeLine(String(formData.get("text") || ""));
+    if (!text) return { ok: false, error: "Text is required" };
+
+    const r = getRedisOrError();
+    if ("error" in r) return { ok: false, error: r.error };
+
+    await r.redis.sadd(KEY_UNUSED, text);
+
+    revalidatePath("/admin");
+    return { ok: true, message: "Added 1 review", added: 1 };
+  } catch (e) {
+    console.error("addOne error:", e);
+    return { ok: false, error: "Internal error while adding review" };
   }
 }
 
-function pickKeys(formData: FormData) {
-  const lang = String(formData.get("lang") || "zh") === "en" ? "en" : "zh";
-  const KEY_UNUSED = lang === "zh" ? KEY_UNUSED_ZH : KEY_UNUSED_EN;
-  const KEY_USED = lang === "zh" ? KEY_USED_ZH : KEY_USED_EN;
-  const adminPath = `/admin?lang=${lang}`;
-  return { lang, KEY_UNUSED, KEY_USED, adminPath };
-}
+/* =========================
+   Bulk Add
+   ========================= */
+export async function bulkAdd(formData: FormData): Promise<ActionResult> {
+  try {
+    const token = String(formData.get("token") || "");
+    const auth = checkAdmin(token);
+    if (!auth.ok) return auth;
 
-export async function addOne(formData: FormData) {
-  const token = String(formData.get("token") || "");
-  requireAdmin(token);
+    const bulk = String(formData.get("bulk") || "").trim();
+    if (!bulk) return { ok: false, error: "Bulk text is required" };
 
-  const { KEY_UNUSED, adminPath } = pickKeys(formData);
+    const lines = bulk
+      .split(/\r?\n/)
+      .map(normalizeLine)
+      .filter(Boolean);
 
-  const text = String(formData.get("text") || "").trim();
-  if (!text) return;
+    if (lines.length === 0) {
+      return { ok: false, error: "No valid lines found" };
+    }
 
-  const redis = getRedis();
-  await redis.sadd(KEY_UNUSED, text);
+    const r = getRedisOrError();
+    if ("error" in r) return { ok: false, error: r.error };
 
-  revalidatePath(adminPath);
-}
+    for (const line of lines) {
+      await r.redis.sadd(KEY_UNUSED, line);
+    }
 
-export async function bulkAdd(formData: FormData) {
-  const token = String(formData.get("token") || "");
-  requireAdmin(token);
-
-  const { KEY_UNUSED, adminPath } = pickKeys(formData);
-
-  const bulk = String(formData.get("bulk") || "").trim();
-  if (!bulk) return;
-
-  const lines = bulk
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-  if (!lines.length) return;
-
-  const redis = getRedis();
-
-  // Upstash sadd 支持多参数，但 TS 类型容易报错；用循环最稳
-  for (const line of lines) {
-    await redis.sadd(KEY_UNUSED, line);
+    revalidatePath("/admin");
+    return {
+      ok: true,
+      message: `Added ${lines.length} reviews`,
+      added: lines.length,
+    };
+  } catch (e) {
+    console.error("bulkAdd error:", e);
+    return { ok: false, error: "Internal error while bulk adding" };
   }
-
-  revalidatePath(adminPath);
 }
 
-export async function resetAll(formData: FormData) {
-  const token = String(formData.get("token") || "");
-  requireAdmin(token);
+/* =========================
+   Clear Used
+   ========================= */
+export async function clearUsed(formData: FormData): Promise<ActionResult> {
+  try {
+    const token = String(formData.get("token") || "");
+    const auth = checkAdmin(token);
+    if (!auth.ok) return auth;
 
-  const { KEY_UNUSED, KEY_USED, adminPath } = pickKeys(formData);
+    const r = getRedisOrError();
+    if ("error" in r) return { ok: false, error: r.error };
 
-  const redis = getRedis();
-  await redis.del(KEY_UNUSED);
-  await redis.del(KEY_USED);
+    await r.redis.del(KEY_USED);
 
-  revalidatePath(adminPath);
+    revalidatePath("/admin");
+    return { ok: true, message: "Used pool cleared" };
+  } catch (e) {
+    console.error("clearUsed error:", e);
+    return { ok: false, error: "Internal error while clearing used pool" };
+  }
 }
 
-export async function clearUsed(formData: FormData) {
-  const token = String(formData.get("token") || "");
-  requireAdmin(token);
+/* =========================
+   Reset All
+   ========================= */
+export async function resetAll(formData: FormData): Promise<ActionResult> {
+  try {
+    const token = String(formData.get("token") || "");
+    const auth = checkAdmin(token);
+    if (!auth.ok) return auth;
 
-  const { KEY_USED, adminPath } = pickKeys(formData);
+    const r = getRedisOrError();
+    if ("error" in r) return { ok: false, error: r.error };
 
-  const redis = getRedis();
-  await redis.del(KEY_USED);
+    await r.redis.del(KEY_UNUSED);
+    await r.redis.del(KEY_USED);
 
-  revalidatePath(adminPath);
+    revalidatePath("/admin");
+    return { ok: true, message: "All pools reset" };
+  } catch (e) {
+    console.error("resetAll error:", e);
+    return { ok: false, error: "Internal error while resetting pools" };
+  }
 }
