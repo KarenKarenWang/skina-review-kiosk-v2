@@ -1,4 +1,3 @@
-// app/r/page.tsx
 export const dynamic = "force-dynamic";
 
 import ReviewClient from "./ReviewClient";
@@ -20,15 +19,15 @@ function withLang(url: string, lang: "zh" | "en") {
   return url.includes("?") ? `${url}&hl=${hl}` : `${url}?hl=${hl}`;
 }
 
-export default async function ReviewPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ lang?: string }>;
+export default async function ReviewPage(props: {
+  searchParams: Promise<{ lang?: string | string[] }>;
 }) {
-  const sp = await searchParams;
-  const lang: "zh" | "en" = sp.lang === "en" ? "en" : "zh";
+  const sp = await props.searchParams;
+  const rawLang = Array.isArray(sp?.lang) ? sp.lang[0] : sp?.lang;
 
-  // Google Review URL
+  // 默认英文
+  const lang: "zh" | "en" = rawLang === "zh" ? "zh" : "en";
+
   let reviewUrl: string | null = null;
   try {
     const base = getGoogleReviewUrl();
@@ -39,14 +38,14 @@ export default async function ReviewPage({
 
   const fallback =
     lang === "zh"
-      ? "服务很专业，环境干净舒适，体验很好，推荐！"
-      : "Great experience! Professional service and friendly staff. Highly recommend.";
+      ? "环境很好，服务很专业，整体体验很舒服。"
+      : "Great environment, very professional service, and a very comfortable overall experience.";
 
   const keyUnused = lang === "zh" ? KEY_UNUSED_ZH : KEY_UNUSED_EN;
   const keyUsed = lang === "zh" ? KEY_USED_ZH : KEY_USED_EN;
 
-  // ✅ 安全获取 redis：不可用就直接 fallback
   const r = getRedisSafe();
+
   if (!r.ok) {
     return <ReviewClient line={fallback} reviewUrl={reviewUrl} lang={lang} />;
   }
@@ -54,12 +53,10 @@ export default async function ReviewPage({
   const redis = r.redis;
 
   try {
-    // 仍然沿用你现在的 smembers 抽取逻辑（先保证稳定）
     const all = (await redis.smembers(keyUnused)) as string[] | null;
-    const line = all && all.length ? pickOne(all) : fallback;
+    const line = all && all.length > 0 ? pickOne(all) : fallback;
 
-    // 标记已使用（避免重复）
-    if (all && all.length) {
+    if (all && all.length > 0) {
       await redis.srem(keyUnused, line);
       await redis.sadd(keyUsed, line);
     }
