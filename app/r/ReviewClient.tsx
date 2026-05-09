@@ -95,30 +95,7 @@ export default function ReviewClient({
           />
         </div>
 
-        <div
-          style={{
-            marginBottom: 20,
-            overflow: "hidden",
-            borderRadius: 24,
-            boxShadow: "0 14px 40px rgba(0,0,0,0.10)",
-            background: "#fff",
-          }}
-        >
-          <Image
-            src={bannerSrc}
-            alt="Skina banner"
-            width={1400}
-            height={700}
-            priority
-            style={{
-              width: "100%",
-              height: "auto",
-              display: "block",
-              objectFit: "cover",
-            }}
-          />
-        </div>
-
+        
         <section
           style={{
             background: "rgba(255,255,255,0.9)",
