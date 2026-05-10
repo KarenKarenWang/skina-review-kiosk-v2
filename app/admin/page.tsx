@@ -1,5 +1,6 @@
 // app/admin/page.tsx
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import {
   getRedisSafe,
@@ -17,14 +18,19 @@ function getKeys(lang: "en" | "zh") {
     : { UNUSED: KEY_UNUSED_ZH, USED: KEY_USED_ZH };
 }
 
-export default async function AdminPage({
-  searchParams,
-}: {
-  searchParams?: { token?: string; lang?: string };
+export default async function AdminPage(props: {
+  searchParams: Promise<{
+    token?: string | string[];
+    lang?: string | string[];
+  }>;
 }) {
-  const tokenFromUrl = searchParams?.token ?? "";
-  const lang: "en" | "zh" =
-    (searchParams?.lang || "").toLowerCase() === "en" ? "en" : "zh";
+  const sp = await props.searchParams;
+
+  const rawToken = Array.isArray(sp?.token) ? sp.token[0] : sp?.token;
+  const rawLang = Array.isArray(sp?.lang) ? sp.lang[0] : sp?.lang;
+
+  const tokenFromUrl = rawToken ?? "";
+  const lang: "en" | "zh" = rawLang === "en" ? "en" : "zh";
 
   const r = getRedisSafe();
 
@@ -36,10 +42,14 @@ export default async function AdminPage({
     try {
       const redis = r.redis;
       const { UNUSED, USED } = getKeys(lang);
-      [unusedCount, usedCount] = await Promise.all([
+
+      const [unused, used] = await Promise.all([
         redis.scard(UNUSED),
         redis.scard(USED),
       ]);
+
+      unusedCount = Number(unused || 0);
+      usedCount = Number(used || 0);
     } catch (e) {
       console.error("AdminPage count error:", e);
       redisError = "Redis error while reading counts.";
